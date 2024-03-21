@@ -1,0 +1,124 @@
+--Q1: What is the total amount each customer spent at the restaurant?
+
+SELECT t1.customer_id, sum(t2.price) as amount_spent
+FROM dannys_diner.sales AS t1
+INNER JOIN dannys_diner.menu AS t2
+ON t1.product_id = t2.product_id
+GROUP BY t1.customer_id
+ORDER BY 2 DESC
+
+--Q2: How many days has each customer visited the restaurant?
+
+SELECT customer_id, COUNT(DISTINCT(order_date))
+FROM dannys_diner.sales
+GROUP BY customer_id
+
+--Q3: What was the first item from the menu purchased by each customer?
+
+WITH first_orders AS (
+	SELECT *, DENSE_RANK() OVER(PARTITION BY t1.customer_id ORDER BY t1.order_date) AS order_no
+	FROM dannys_diner.sales AS t1
+	INNER JOIN dannys_diner.menu AS t2
+	ON t1.product_id = t2.product_id)
+
+SELECT customer_id, order_date, product_name as first_order
+FROM first_orders
+WHERE order_no = 1
+
+--Q4: What is the most purchased item on the menu and how many times was it purchased by all customers?
+
+SELECT t2.product_name, COUNT(*) AS times_ordered
+FROM dannys_diner.sales AS t1
+INNER JOIN dannys_diner.menu AS t2
+ON t1.product_id = t2.product_id
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1
+
+
+--Q5: Which item was the most popular for each customer?
+
+WITH fav_dishes AS(
+	SELECT t1.customer_id, t2.product_name,
+	DENSE_RANK() OVER(PARTITION BY customer_id ORDER BY COUNT(*) DESC) times_ordered
+	FROM dannys_diner.sales AS T1
+	INNER JOIN dannys_diner.menu AS t2
+	ON t1.product_id = t2.product_id
+	GROUP BY t1.customer_id, t2.product_name)
+
+SELECT customer_id, product_name
+FROM fav_dishes
+WHERE times_ordered = 1
+
+--Q6:Which item was purchased first by the customer after they became a member? 
+
+WITH post_membership_orders AS (
+	SELECT t1.customer_id as customer, t3.product_name, DENSE_RANK() OVER(PARTITION BY t1.customer_id ORDER BY t1.order_date) as order_no
+	FROM dannys_diner.sales AS t1
+	INNER JOIN dannys_diner.members AS t2
+	ON t1.customer_id = t2.customer_id
+	INNER JOIN dannys_diner.menu AS t3
+	ON t1.product_id = t3.product_id 
+	WHERE t1.order_date >= t2.join_date)
+
+SELECT customer, product_name
+FROM post_membership_orders
+WHERE order_no = 1
+
+--Q7: Which item was purchased just before the customer became a member?
+
+WITH pre_membership_orders AS (
+	SELECT t1.customer_id as customer, t3.product_name, DENSE_RANK() OVER(PARTITION BY t1.customer_id ORDER BY t1.order_date DESC) as order_no
+	FROM dannys_diner.sales AS t1
+	INNER JOIN dannys_diner.members AS t2
+	ON t1.customer_id = t2.customer_id
+	INNER JOIN dannys_diner.menu AS t3
+	ON t1.product_id = t3.product_id 
+	WHERE t1.order_date <t2.join_date)
+	
+SELECT customer, product_name
+FROM pre_membership_orders
+WHERE order_no = 1
+
+
+--Q8: What is the total items and amount spent for each member before they became a member?
+
+WITH pre_membership_orders AS (
+	SELECT t1.customer_id, COUNT(t1.product_id) AS total_items, SUM(t3.price) AS money_spent
+	FROM dannys_diner.sales AS t1
+	LEFT JOIN dannys_diner.members AS t2
+	ON t1.customer_id = t2.customer_id
+	INNER JOIN dannys_diner.menu AS t3
+	ON t1.product_id = t3.product_id 
+	WHERE t1.order_date < t2.join_date
+	GROUP BY 1)
+	
+SELECT *
+FROM pre_membership_orders
+
+--Q9:If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
+
+SELECT t1.customer_id, SUM((CASE 
+							WHEN t2.product_name = 'sushi' THEN 20*price 
+							ELSE 10*price 
+							end)) as total_points
+FROM dannys_diner.sales AS t1
+INNER JOIN dannys_diner.menu AS t2
+ON t1.product_id = t2.product_id 	
+GROUP BY t1.customer_id
+
+--Q10: In the first week after a customer joins the program (including their join date) 
+--they earn 2x points on all items, not just sushi - how many points do customer A and B have at the end of January?
+
+SELECT t1.customer_id, SUM((CASE 
+							WHEN (t1.order_date - t2.join_date) BETWEEN 0 AND 6 OR t3.product_name = 'sushi' THEN 20*price
+							ELSE 10*price 
+							end)) as total_points
+FROM dannys_diner.sales AS t1
+iNNER JOIN dannys_diner.members AS t2
+ON t1.customer_id = t2.customer_id 
+INNER JOIN dannys_diner.menu AS t3
+ON t1.product_id = t3.product_id 
+WHERE EXTRACT(MONTH FROM t1.order_date) = 1
+GROUP BY t1.customer_id
+
